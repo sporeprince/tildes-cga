@@ -35,15 +35,19 @@ pip install -r requirements.txt
 Create a games_population.csv in the repo root. Must be tab-delimited and include a game column and optional alias* columns. Sample file provided.
 
 ### 3) Run
+```bash
 python tally_votes.py \
   --url https://tildes.net/~games/1pvz/colossal_game_adventure_voting_topic \
   --games-file games_population.csv \
   --print-summary
+```
 or
+```bash
 python tally_votes.py --debug --print-summary
-
+```
 
 ### Command Options
+```bash
 --url           Page to scrape (default points at CGA voting topic)
 --games-file    Path to tab-delimited games CSV (default: games_population.csv)
 --tally-out     Output CSV for totals (default: tally.csv)
@@ -54,3 +58,5 @@ python tally_votes.py --debug --print-summary
 --author-debug  Regex of author names to focus debug logs (e.g., "user_id")
 --print-summary Print top results at the end
 --dump-html     Save the fetched HTML to a file for inspection
+
+```
