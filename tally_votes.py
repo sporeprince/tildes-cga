@@ -380,10 +380,15 @@ def main():
 
 
     # Write outputs
+    all_rows = [(title, game_totals.get(title, 0)) for title in allowed]
+
+    # Sort: primary = points desc, secondary = title asc (case-insensitive)
+    all_rows.sort(key=lambda x: (-x[1], x[0].lower()))
+
     with open(args.tally_out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["game", "total_points"])
-        for title, pts in game_totals.most_common():
+        for title, pts in all_rows:
             w.writerow([title, pts])
 
     invalid_log_sorted = sorted(set(invalid_log))
@@ -417,6 +422,7 @@ def main():
     print(f"Ignored vote pairs:      {ignored_votes_total}")
     print(f"Rollover points applied: {total_rollover_pts} across {nonzero_rollover_games} games")
     print(f"Games tallied:           {len(game_totals)}")
+    print(f"Games tallied:           {len(allowed)}  (including zero-point games)")
     print(f"Wrote tally to:          {args.tally_out}")
     print(f"Wrote invalids to:       {args.invalid_out}")
     print(f"Wrote ignored votes to:  {args.ignored_out}")
