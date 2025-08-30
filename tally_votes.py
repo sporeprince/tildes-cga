@@ -75,42 +75,60 @@ def _add_key_with_variants(mapper: Dict[str, str], key: str, canonical: str, war
         else:
             mapper.setdefault(k, canonical)
 
-def parse_games_file(path: str, debug: bool = False) -> Tuple[Set[str], Dict[str, str]]:
+def parse_games_file(path: str, debug: bool = False):
     """
     TAB CSV with columns:
       - game (canonical)
       - alias* (alias1, alias2, ... any header starting with 'alias', case-insensitive)
+      - roll_over_points (optional; default 0). Pre-existing points to seed into the tally.
+
     Returns:
-      allowed_set, key_to_canonical
+      allowed_set, key_to_canonical, rollovers_dict
+        - rollovers_dict maps canonical_title -> int points (>= 0)
     """
     allowed: Set[str] = set()
     key_to_canonical: Dict[str, str] = {}
+    rollovers: Dict[str, int] = defaultdict(int)
     warnset = set()
 
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f, delimiter="\t")
         header = next(reader)
+        if not header:
+            raise ValueError("games_population.csv has no header row")
+
+        # Identify columns
         idx_game = None
+        idx_rollover = None
         alias_cols: List[int] = []
+
         for i, h in enumerate(header):
-            h = (h or "").strip().lower()
-            if h == "game":
+            h_clean = (h or "").strip()
+            h_low = h_clean.lower()
+            if h_low == "game":
                 idx_game = i
-            elif h.startswith("alias"):
+            elif h_low.startswith("alias"):
                 alias_cols.append(i)
+            elif h_low in {"roll_over_points", "rollover_points", "roll-over-points"}:
+                idx_rollover = i
+
         if idx_game is None:
             raise ValueError("games_population.csv must contain a 'game' column")
 
         for row in reader:
             if not row or len(row) <= idx_game:
                 continue
+
             canonical = normalize_unicode(row[idx_game])
             if not canonical or canonical.startswith("#"):
                 continue
+
+            # Record canonical
             allowed.add(canonical)
             ck = norm_key(canonical)
             _add_key_with_variants(key_to_canonical, ck, canonical, warnset, debug)
 
+            # Aliases
             for ai in alias_cols:
                 if ai < len(row):
                     alias_raw = normalize_unicode(row[ai])
@@ -124,11 +142,29 @@ def parse_games_file(path: str, debug: bool = False) -> Tuple[Set[str], Dict[str
                 if ak:
                     _add_key_with_variants(key_to_canonical, ak, canonical, warnset, debug)
 
+            # Rollover points
+            pts = 0
+            if idx_rollover is not None and idx_rollover < len(row):
+                raw = (row[idx_rollover] or "").strip()
+                if raw:
+                    try:
+                        pts = int(raw)
+                    except ValueError:
+                        if debug:
+                            print(f"[warn] Non-integer roll_over_points '{raw}' for '{canonical}' -> treating as 0")
+                        pts = 0
+            if pts:
+                rollovers[canonical] += pts  # accumulate if duplicates appear
+
     if debug:
         canon_keys = {norm_key(t) for t in allowed}
         alias_count = sum(1 for k in key_to_canonical if k not in canon_keys)
+        total_roll = sum(rollovers.values())
         print(f"[games] Canonical: {len(allowed)}  total match-keys: {len(key_to_canonical)} (~{alias_count} aliases)")
-    return allowed, key_to_canonical
+        print(f"[games] Rollover points: {total_roll} across {len(rollovers)} games")
+
+    return allowed, key_to_canonical, dict(rollovers)
+
 
 # ---------------- Fetch + DOM helpers ----------------
 
@@ -282,7 +318,7 @@ def main():
 
     # Load games + aliases
     try:
-        allowed, key_to_canonical = parse_games_file(args.games_file, debug=args.debug)
+        allowed, key_to_canonical, rollovers = parse_games_file(args.games_file, debug=args.debug)
     except Exception as e:
         print(f"ERROR loading games file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -299,7 +335,7 @@ def main():
             print(f"[dump] Failed to save HTML: {e}")
 
     # Tally
-    game_totals = Counter()
+    game_totals = Counter(rollovers)   # <-- seed with pre-existing points
     invalid_log = []
     ignored_by_user = defaultdict(list)
 
@@ -325,7 +361,6 @@ def main():
             else:
                 print(f"  [parsed] {user}: no allowed titles matched")
 
-        # If nothing matched AND nothing ignored, skip (not a ballot)
         if not per_game and not ignored:
             continue
 
@@ -342,6 +377,7 @@ def main():
             game_totals[title] += pts
         if args.debug and (author_debug_re is None or author_debug_re.search(user)):
             print(f"  [OK] Counted {user}'s ballot")
+
 
     # Write outputs
     with open(args.tally_out, "w", newline="", encoding="utf-8") as f:
@@ -370,12 +406,16 @@ def main():
                     f.write(f"  - {title_raw} ({pts})\n")
 
     # Console summary
+    total_rollover_pts = sum(rollovers.values())
+    nonzero_rollover_games = sum(1 for v in rollovers.values() if v > 0)
+
     print("\n=== Scrape Summary ===")
     print(f"Authors seen:            {len(authors_seen)}")
     print(f"Ballots detected:        {ballots_seen}")
     print(f"Valid ballots:           {valid_ballots}")
     print(f"Invalid ballots:         {invalid_ballots}")
     print(f"Ignored vote pairs:      {ignored_votes_total}")
+    print(f"Rollover points applied: {total_rollover_pts} across {nonzero_rollover_games} games")
     print(f"Games tallied:           {len(game_totals)}")
     print(f"Wrote tally to:          {args.tally_out}")
     print(f"Wrote invalids to:       {args.invalid_out}")

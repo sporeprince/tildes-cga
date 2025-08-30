@@ -6,7 +6,8 @@ Scrape and tally votes from a Tildes discussion thread where people vote in **to
 This script:
 - Downloads the page and finds **top-level** comments (not replies)  
 - Extracts every `Title (N)` pair from each ballot (robust to titles with extra parentheses)  
-- Matches titles against a **tab-delimited** `games_population.csv` with aliases (`alias1`, `alias2`, …)  
+- Matches titles against a **tab-delimited** `games_population.csv` with aliases (`alias1`, `alias2`, …)
+- **Roll-over points:** optionally seeds each game with pre-existing points from `roll_over_points` (see below)  
 - Enforces rules:
   - **≤ 20** total points per user
   - **≤ 5** points for any single game per user
@@ -32,7 +33,10 @@ pip install -r requirements.txt
 ```
 
 ### 2) Prepare the game list (tab-delimited)
-Create a games_population.csv in the repo root. Must be tab-delimited and include a game column and optional alias* columns. Sample file provided.
+Create a games_population.csv in the repo root. Must be tab-delimited and include a game column and optional alias* columns.Sample file provided.
+
+**New:** You can also include a roll_over_points column to seed pre-existing points per game (defaults to 0).
+
 
 ### 3) Run
 ```bash
@@ -45,6 +49,12 @@ or
 ```bash
 python tally_votes.py --debug --print-summary
 ```
+
+### How roll_over_points works
+* During loading of games_population.csv, the script reads roll_over_points for each game
+* Before ballots are tallied, the totals Counter is seeded with these values
+* Final scores in tally.csv are therefore:
+    * final = roll_over_points + points_from_scraped_ballots
 
 ### Command Options
 ```bash
